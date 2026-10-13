@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-import hashlib
-from asyncio import timeout
 from dataclasses import dataclass
+import hashlib
 from typing import Any
 
+from asyncio import timeout
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
@@ -69,9 +69,7 @@ class PanasonicApiClient:
 
         pwd_md5 = hashlib.md5(password.encode()).hexdigest().upper()
         inter_md5 = hashlib.md5(f"{pwd_md5}{username}".encode()).hexdigest().upper()
-        final_token = (
-            hashlib.md5(f"{inter_md5}{token_start}".encode()).hexdigest().upper()
-        )
+        final_token = hashlib.md5(f"{inter_md5}{token_start}".encode()).hexdigest().upper()
 
         login_res = await self._post(
             URL_LOGIN,
@@ -187,9 +185,7 @@ class PanasonicApiClient:
         )
 
         self._validate_response_id(endpoint, res)
-        results = (
-            res.get("results") if endpoint.require_results else res.get("results", res)
-        )
+        results = res.get("results") if endpoint.require_results else res.get("results", res)
         if not isinstance(results, dict):
             raise PanasonicApiResponseError("Status response results must be an object")
         missing_keys = endpoint.required_result_keys - results.keys()
@@ -252,9 +248,7 @@ class PanasonicApiClient:
         session = async_get_clientsession(self._hass)
         try:
             async with timeout(10):
-                response = await session.post(
-                    url, json=payload, headers=headers, ssl=False
-                )
+                response = await session.post(url, json=payload, headers=headers, ssl=False)
                 if response.status != 200:
                     text = await response.text()
                     raise PanasonicApiResponseError(

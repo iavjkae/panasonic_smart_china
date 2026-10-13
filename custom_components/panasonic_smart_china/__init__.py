@@ -26,7 +26,9 @@ _LOGGER = logging.getLogger(__name__)
 PLATFORMS = list(supported_platforms())
 
 
-def _async_create_account_device(hass: HomeAssistant, entry: ConfigEntry) -> str | None:
+def _async_create_account_device(
+    hass: HomeAssistant, entry: ConfigEntry
+) -> str | None:
     """Create the account service device and return its registry id."""
     account_id = entry.unique_id or entry.data.get(CONF_USR_ID)
     if not account_id:

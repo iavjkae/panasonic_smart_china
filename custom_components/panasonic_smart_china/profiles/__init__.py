@@ -20,7 +20,8 @@ SUPPORTED_PROFILES = {
 }
 
 SUPPORTED_CONTROLLERS = {
-    profile.controller_model: profile for profile in SUPPORTED_PROFILES.values()
+    profile.controller_model: profile
+    for profile in SUPPORTED_PROFILES.values()
 }
 
 
@@ -46,9 +47,7 @@ def find_profile(profile_id: str | None) -> PanasonicProfile | None:
     return SUPPORTED_PROFILES.get(profile_id)
 
 
-def find_profile_for_controller(
-    controller_model: str | None,
-) -> PanasonicProfile | None:
+def find_profile_for_controller(controller_model: str | None) -> PanasonicProfile | None:
     """Find a profile by controller/model key stored in config entries."""
     if not controller_model:
         return None

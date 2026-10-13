@@ -6,6 +6,7 @@ import logging
 from typing import Any, Mapping
 
 import voluptuous as vol
+
 from homeassistant import config_entries
 from homeassistant.const import CONF_PASSWORD
 from homeassistant.core import callback
@@ -268,9 +269,7 @@ class PanasonicConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             lines.append(f"- {name}：类别 {category}，型号 {model}，{reason}")
         return "\n".join(lines) if lines else "无"
 
-    def _build_configured_devices(
-        self, selected_device_ids: list[str]
-    ) -> dict[str, dict[str, Any]]:
+    def _build_configured_devices(self, selected_device_ids: list[str]) -> dict[str, dict[str, Any]]:
         configured = {}
         for device_id in selected_device_ids:
             support_info = self._device_support_map.get(device_id, {})
@@ -284,9 +283,7 @@ class PanasonicConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             try:
                 token = generate_device_token(device_id)
             except DeviceTokenError as err:
-                _LOGGER.error(
-                    "Token generation failed for deviceId %s: %s", device_id, err
-                )
+                _LOGGER.error("Token generation failed for deviceId %s: %s", device_id, err)
                 continue
 
             configured[device_id] = {
@@ -344,7 +341,9 @@ class PanasonicOptionsFlow(config_entries.OptionsFlow):
         return self.async_show_form(
             step_id="init",
             data_schema=vol.Schema(
-                {vol.Required(CONF_DEVICE_ID): vol.In(device_options)}
+                {
+                    vol.Required(CONF_DEVICE_ID): vol.In(device_options)
+                }
             ),
         )
 
@@ -360,9 +359,7 @@ class PanasonicOptionsFlow(config_entries.OptionsFlow):
         errors = {}
 
         try:
-            cloud_devices = await PanasonicApiClient(
-                self.hass, data.get(CONF_SSID)
-            ).get_devices(
+            cloud_devices = await PanasonicApiClient(self.hass, data.get(CONF_SSID)).get_devices(
                 data[CONF_USR_ID],
                 data[CONF_FAMILY_ID],
                 data[CONF_REAL_FAMILY_ID],
@@ -391,9 +388,9 @@ class PanasonicOptionsFlow(config_entries.OptionsFlow):
                         "deviceName",
                         devices[device_id].get(CONF_DEVICE_NAME, device_id),
                     )
-                    category = devices[device_id].get(
-                        CONF_CATEGORY
-                    ) or extract_category_from_device_id(device_id)
+                    category = devices[device_id].get(CONF_CATEGORY) or extract_category_from_device_id(
+                        device_id
+                    )
                     matching = find_controllers_for_device(
                         category,
                         _extract_device_model_values(device_info, device_id),
@@ -407,13 +404,9 @@ class PanasonicOptionsFlow(config_entries.OptionsFlow):
                     )
                     if profile:
                         devices[device_id][CONF_CATEGORY] = category
-                        devices[device_id][CONF_CONTROLLER_MODEL] = (
-                            profile.controller_model
-                        )
+                        devices[device_id][CONF_CONTROLLER_MODEL] = profile.controller_model
                         devices[device_id][CONF_PROFILE_ID] = profile.profile_id
-                        devices[device_id][CONF_HA_PLATFORMS] = list(
-                            profile.ha_platforms
-                        )
+                        devices[device_id][CONF_HA_PLATFORMS] = list(profile.ha_platforms)
                         devices[device_id][CONF_ENTITY_KIND] = profile.entity_kind
                     continue
 
@@ -429,9 +422,7 @@ class PanasonicOptionsFlow(config_entries.OptionsFlow):
                 try:
                     token = generate_device_token(device_id)
                 except DeviceTokenError as err:
-                    _LOGGER.error(
-                        "Token generation failed for deviceId %s: %s", device_id, err
-                    )
+                    _LOGGER.error("Token generation failed for deviceId %s: %s", device_id, err)
                     continue
 
                 devices[device_id] = {
@@ -453,13 +444,9 @@ class PanasonicOptionsFlow(config_entries.OptionsFlow):
 
             new_data = dict(data)
             new_data[CONF_DEVICES] = devices
-            self.hass.config_entries.async_update_entry(
-                self._config_entry, data=new_data
-            )
+            self.hass.config_entries.async_update_entry(self._config_entry, data=new_data)
             await self.hass.config_entries.async_reload(self._config_entry.entry_id)
-            _LOGGER.info(
-                "Device rescan completed, added %s new supported devices.", added
-            )
+            _LOGGER.info("Device rescan completed, added %s new supported devices.", added)
             return self.async_create_entry(title="", data={})
 
         return self.async_show_form(
@@ -481,9 +468,7 @@ class PanasonicOptionsFlow(config_entries.OptionsFlow):
 
             new_data = dict(self._config_entry.data)
             new_data[CONF_DEVICES] = devices
-            self.hass.config_entries.async_update_entry(
-                self._config_entry, data=new_data
-            )
+            self.hass.config_entries.async_update_entry(self._config_entry, data=new_data)
             await self.hass.config_entries.async_reload(self._config_entry.entry_id)
             return self.async_create_entry(title="", data={})
 
@@ -511,9 +496,7 @@ class PanasonicOptionsFlow(config_entries.OptionsFlow):
         )
 
 
-def _extract_device_model(
-    device_info: dict[str, Any], fallback: str | None
-) -> str | None:
+def _extract_device_model(device_info: dict[str, Any], fallback: str | None) -> str | None:
     """Return the best model-like value from a Panasonic device info payload."""
     for field in MODEL_FIELD_CANDIDATES:
         value = device_info.get(field)
@@ -545,9 +528,7 @@ def _extract_device_id_suffix(device_id: str) -> str | None:
     return parts[2] if len(parts) == 3 and parts[2] else None
 
 
-def _format_device_label(
-    name: str, model: str | None, device_id: str | None = None
-) -> str:
+def _format_device_label(name: str, model: str | None, device_id: str | None = None) -> str:
     """Format a device option label with model information."""
     if model and device_id:
         return f"{name} - {model} ({device_id})"
