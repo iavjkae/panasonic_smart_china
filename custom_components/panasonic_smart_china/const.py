@@ -1,9 +1,15 @@
 from .profiles import (
-    SUPPORTED_CONTROLLERS,
+    SUPPORTED_CONTROLLERS as SUPPORTED_CONTROLLERS,
+)
+from .profiles import (
     find_profiles_for_category,
     find_profiles_for_device,
 )
-from .profiles.ducted_ac_0900 import FAN_MAX, FAN_MIN, FAN_MUTE
+
+# Keep these exports for callers using the pre-profile integration interface.
+from .profiles.ducted_ac_0900 import FAN_MAX as FAN_MAX
+from .profiles.ducted_ac_0900 import FAN_MIN as FAN_MIN
+from .profiles.ducted_ac_0900 import FAN_MUTE as FAN_MUTE
 
 DOMAIN = "panasonic_smart_china"
 
@@ -29,24 +35,18 @@ CONF_ENTITY_KIND = "entity_kind"
 def find_controllers_for_category(category_id):
     """根据设备 ID 中的 category_id 查找匹配的控制器列表"""
     profiles = find_profiles_for_category(category_id)
-    return {
-        profile.controller_model: profile
-        for profile in profiles.values()
-    }
+    return {profile.controller_model: profile for profile in profiles.values()}
 
 
 def find_controllers_for_device(category_id, model_values=None):
     """根据 category_id 和设备型号候选值查找匹配的控制器列表"""
     profiles = find_profiles_for_device(category_id, model_values)
-    return {
-        profile.controller_model: profile
-        for profile in profiles.values()
-    }
+    return {profile.controller_model: profile for profile in profiles.values()}
 
 
 def extract_category_from_device_id(device_id):
     """从 deviceId (格式: MAC_CATEGORY_SUFFIX) 中提取 category_id"""
-    parts = device_id.split('_', 2)
+    parts = device_id.split("_", 2)
     if len(parts) >= 2:
         return parts[1]
     return None

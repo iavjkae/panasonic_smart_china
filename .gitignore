@@ -4,3 +4,6 @@ script/
 custom_components/.DS_Store
 custom_components/*.zip
 Docs/
+__pycache__/
+*.py[cod]
+.pytest_cache/

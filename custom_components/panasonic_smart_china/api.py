@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import hashlib
+from asyncio import timeout
+from dataclasses import dataclass
 from typing import Any
 
-import async_timeout
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
@@ -69,7 +69,9 @@ class PanasonicApiClient:
 
         pwd_md5 = hashlib.md5(password.encode()).hexdigest().upper()
         inter_md5 = hashlib.md5(f"{pwd_md5}{username}".encode()).hexdigest().upper()
-        final_token = hashlib.md5(f"{inter_md5}{token_start}".encode()).hexdigest().upper()
+        final_token = (
+            hashlib.md5(f"{inter_md5}{token_start}".encode()).hexdigest().upper()
+        )
 
         login_res = await self._post(
             URL_LOGIN,
@@ -151,7 +153,10 @@ class PanasonicApiClient:
             allow_non_json_response=endpoint.allow_non_json_response,
         )
 
-        results = res.get("results") if endpoint.require_results else res.get("results", res)
+        self._validate_response_id(endpoint, res)
+        results = (
+            res.get("results") if endpoint.require_results else res.get("results", res)
+        )
         if not isinstance(results, dict):
             raise PanasonicApiResponseError("Status response results must be an object")
         missing_keys = endpoint.required_result_keys - results.keys()
@@ -171,7 +176,7 @@ class PanasonicApiClient:
     ) -> dict[str, Any]:
         """Send status/control params for a supported device profile."""
         endpoint = profile.set_endpoint
-        return await self._post(
+        res = await self._post(
             self._endpoint_url(endpoint),
             {
                 "id": endpoint.request_id,
@@ -184,6 +189,23 @@ class PanasonicApiClient:
             require_results=endpoint.require_results,
             allow_non_json_response=endpoint.allow_non_json_response,
         )
+        self._validate_response_id(endpoint, res)
+        return res
+
+    def _validate_response_id(
+        self, endpoint: PanasonicEndpoint, data: dict[str, Any]
+    ) -> None:
+        """Match native response IDs when the profile requires it."""
+        if not endpoint.validate_response_id:
+            return
+        value = data.get("id")
+        if isinstance(value, (int, str)) and not isinstance(value, bool):
+            try:
+                if int(value) == endpoint.request_id:
+                    return
+            except ValueError:
+                pass
+        raise PanasonicApiResponseError("Response id did not match the device request")
 
     async def _post(
         self,
@@ -196,8 +218,10 @@ class PanasonicApiClient:
     ) -> dict[str, Any]:
         session = async_get_clientsession(self._hass)
         try:
-            async with async_timeout.timeout(10):
-                response = await session.post(url, json=payload, headers=headers, ssl=False)
+            async with timeout(10):
+                response = await session.post(
+                    url, json=payload, headers=headers, ssl=False
+                )
                 if response.status != 200:
                     text = await response.text()
                     raise PanasonicApiResponseError(
@@ -237,6 +261,11 @@ class PanasonicApiClient:
         nested_error = data.get("error")
         nested_error = nested_error if isinstance(nested_error, dict) else {}
         error_code = data.get("errorCode", nested_error.get("code"))
+        # JSON arrays/objects cannot be tested against the success-code set.
+        # Keep malformed replies inside the API error contract, so callers can
+        # mark updates unavailable or report a service error consistently.
+        if isinstance(error_code, (dict, list)):
+            raise PanasonicApiResponseError("Invalid business error code in response")
         if error_code in SUCCESS_ERROR_CODES:
             return
 

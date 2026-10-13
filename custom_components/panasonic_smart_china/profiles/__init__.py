@@ -5,12 +5,14 @@ from __future__ import annotations
 from collections.abc import Iterable
 
 from ..models import PanasonicProfile
+from .bathroom_heater_0820_fv_jdbju2_s import BATHROOM_HEATER_0820_FV_JDBJU2_S_PROFILE
 from .bathroom_heater_0820_fv_rb20vl1 import (
     BATHROOM_HEATER_0820_FV_RB20VL1_PROFILE,
 )
 from .ducted_ac_0900 import DUCTED_AC_0900_PROFILE
 
 SUPPORTED_PROFILES = {
+    BATHROOM_HEATER_0820_FV_JDBJU2_S_PROFILE.profile_id: BATHROOM_HEATER_0820_FV_JDBJU2_S_PROFILE,
     DUCTED_AC_0900_PROFILE.profile_id: DUCTED_AC_0900_PROFILE,
     BATHROOM_HEATER_0820_FV_RB20VL1_PROFILE.profile_id: (
         BATHROOM_HEATER_0820_FV_RB20VL1_PROFILE
@@ -18,13 +20,12 @@ SUPPORTED_PROFILES = {
 }
 
 SUPPORTED_CONTROLLERS = {
-    profile.controller_model: profile
-    for profile in SUPPORTED_PROFILES.values()
+    profile.controller_model: profile for profile in SUPPORTED_PROFILES.values()
 }
 
 
 def iter_supported_profiles() -> Iterable[PanasonicProfile]:
-    """Iterate over all registered verified profiles."""
+    """Iterate over registered profiles (including experimental adaptations)."""
     return SUPPORTED_PROFILES.values()
 
 
@@ -45,7 +46,9 @@ def find_profile(profile_id: str | None) -> PanasonicProfile | None:
     return SUPPORTED_PROFILES.get(profile_id)
 
 
-def find_profile_for_controller(controller_model: str | None) -> PanasonicProfile | None:
+def find_profile_for_controller(
+    controller_model: str | None,
+) -> PanasonicProfile | None:
     """Find a profile by controller/model key stored in config entries."""
     if not controller_model:
         return None
@@ -53,7 +56,7 @@ def find_profile_for_controller(controller_model: str | None) -> PanasonicProfil
 
 
 def find_profiles_for_category(category_id: str | None) -> dict[str, PanasonicProfile]:
-    """Find verified profiles for a Panasonic category id."""
+    """Find registered profiles for a Panasonic category id."""
     if not category_id:
         return {}
     return {
@@ -67,7 +70,7 @@ def find_profiles_for_device(
     category_id: str | None,
     model_values: set[str] | frozenset[str] | None = None,
 ) -> dict[str, PanasonicProfile]:
-    """Find verified profiles for a concrete Panasonic cloud device."""
+    """Find registered profiles for a concrete Panasonic cloud device."""
     if not category_id:
         return {}
     model_specific_matches = {

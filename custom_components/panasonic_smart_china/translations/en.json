@@ -1,0 +1,25 @@
+{
+  "entity": {
+    "climate": {
+      "bathroom_heater": {
+        "name": "Bathroom heater",
+        "state_attributes": {"swing_mode": {"state": {"fixed": "Fixed", "auto": "Automatic"}}}
+      }
+    },
+    "select": {
+      "wind_kind": {"name": "Air distribution", "state": {"concentrated": "Concentrated", "diffused": "Diffused"}},
+      "duration": {
+        "name": "Run duration",
+        "state": {"15_minutes": "15 minutes", "30_minutes": "30 minutes", "1_hour": "1 hour", "3_hours": "3 hours", "6_hours": "6 hours", "continuous": "Continuous"}
+      },
+      "fan_strength": {"name": "Ventilation strength (experimental)", "state": {"weak": "Weak", "strong": "Strong"}}
+    },
+    "switch": {"odor_sensor": {"name": "Odor detection"}},
+    "sensor": {
+      "remaining_time": {"name": "Time remaining"},
+      "alarm": {"name": "Alarm status code"},
+      "filter": {"name": "Filter status code"},
+      "ota_status": {"name": "Firmware update status code"}
+    }
+  }
+}
