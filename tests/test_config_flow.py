@@ -89,3 +89,49 @@ async def test_malformed_account_response_shows_cannot_connect(device_context):
         )
     assert result["type"] == "form"
     assert result["errors"] == {"base": "cannot_connect"}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "device_id,metadata",
+    [
+        ("AABBCCDDEEFF_0820_JDBJU2-S", {"deviceName": "浴霸"}),
+        (
+            "AABBCCDDEEFF_0820_native-controller",
+            {"deviceName": "浴霸", "devSubTypeId": "JDBJU2-S"},
+        ),
+    ],
+)
+async def test_jdbju2_s_account_discovery_reaches_device_selection(
+    device_context, device_id, metadata
+):
+    """The reported 0820/JDBJU2-S device must reach selection and save its profile."""
+    from custom_components.panasonic_smart_china.api import LoginResult
+    from custom_components.panasonic_smart_china.config_flow import PanasonicConfigFlow
+
+    hass, _, _, _, _ = device_context
+    flow = PanasonicConfigFlow()
+    flow.hass = hass
+    flow.async_set_unique_id = AsyncMock()
+    flow._abort_if_unique_id_configured = MagicMock()
+    client = MagicMock()
+    client.authenticate = AsyncMock(
+        return_value=LoginResult("usr", "session", 1, 2, {device_id: metadata})
+    )
+    with patch(
+        "custom_components.panasonic_smart_china.config_flow.PanasonicApiClient",
+        return_value=client,
+    ):
+        result = await flow.async_step_user(
+            {"username": "user", "password": "password"}
+        )
+    assert result["type"] == "form"
+    assert result["step_id"] == "devices"
+    assert flow._unsupported_device_summary() == "无"
+    result = await flow.async_step_devices({"devices": [device_id]})
+    assert result["type"] == "create_entry"
+    device = result["data"]["devices"][device_id]
+    assert device["profile_id"] == "bathroom_heater_0820_fv_jdbju2_s"
+    assert device["controller_model"] == "FV-JDBJU2-S"
+    assert device["entity_kind"] == "bathroom_heater"
+    assert device["ha_platforms"] == ["climate", "select", "switch", "sensor"]
