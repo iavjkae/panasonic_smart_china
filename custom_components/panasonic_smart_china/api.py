@@ -39,8 +39,8 @@ class LoginResult:
 
     usr_id: str
     ssid: str
-    family_id: str
-    real_family_id: str
+    family_id: str | int
+    real_family_id: str | int
     devices: dict[str, dict[str, Any]]
 
 
@@ -63,9 +63,9 @@ class PanasonicApiClient:
             headers=self._app_headers(),
             require_results=True,
         )
-        token_start = token_res["results"].get("token")
-        if not token_start:
-            raise PanasonicApiResponseError("GetToken response did not include token")
+        token_start = self._required_account_field(
+            self._account_results(token_res), "token", (str,)
+        )
 
         pwd_md5 = hashlib.md5(password.encode()).hexdigest().upper()
         inter_md5 = hashlib.md5(f"{pwd_md5}{username}".encode()).hexdigest().upper()
@@ -88,11 +88,15 @@ class PanasonicApiClient:
             headers=self._app_headers(),
             require_results=True,
         )
-        results = login_res["results"]
-        usr_id = results["usrId"]
-        ssid = results["ssId"]
-        family_id = results["familyId"]
-        real_family_id = results["realFamilyId"]
+        results = self._account_results(login_res)
+        usr_id = self._required_account_field(results, "usrId", (str,))
+        ssid = self._required_account_field(results, "ssId", (str,))
+        # Family IDs are opaque API identifiers and may be numeric. Preserve
+        # their native type rather than changing subsequent request payloads.
+        family_id = self._required_account_field(results, "familyId", (str, int))
+        real_family_id = self._required_account_field(
+            results, "realFamilyId", (str, int)
+        )
 
         self.ssid = ssid
         devices = await self.get_devices(usr_id, family_id, real_family_id)
@@ -105,7 +109,7 @@ class PanasonicApiClient:
         )
 
     async def get_devices(
-        self, usr_id: str, family_id: str, real_family_id: str
+        self, usr_id: str, family_id: str | int, real_family_id: str | int
     ) -> dict[str, dict[str, Any]]:
         """Return all bound devices for the current account session."""
         res = await self._post(
@@ -123,13 +127,42 @@ class PanasonicApiClient:
             require_results=True,
         )
 
+        results = self._account_results(res)
+        device_list = results.get("devList", [])
+        if not isinstance(device_list, list):
+            raise PanasonicApiResponseError("Device list must be an array")
         devices = {}
-        for dev in res["results"].get("devList", []):
-            device_id = dev.get("deviceId")
+        for dev in device_list:
+            if not isinstance(dev, dict):
+                raise PanasonicApiResponseError("Device list entries must be objects")
+            device_id = self._required_account_field(dev, "deviceId", (str,))
             params = dev.get("params")
-            if device_id and isinstance(params, dict):
-                devices[device_id] = params
+            if not isinstance(params, dict):
+                raise PanasonicApiResponseError("Device params must be an object")
+            devices[device_id] = params
         return devices
+
+    @staticmethod
+    def _account_results(data: dict[str, Any]) -> dict[str, Any]:
+        results = data.get("results")
+        if not isinstance(results, dict):
+            raise PanasonicApiResponseError(
+                "Account response results must be an object"
+            )
+        return results
+
+    @staticmethod
+    def _required_account_field(
+        results: dict[str, Any], key: str, accepted_types: tuple[type, ...]
+    ) -> Any:
+        value = results.get(key)
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, accepted_types)
+            or value == ""
+        ):
+            raise PanasonicApiResponseError(f"Invalid or missing account field: {key}")
+        return value
 
     async def get_device_status(
         self,

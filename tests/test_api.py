@@ -299,3 +299,143 @@ async def test_both_business_error_representations(
                 await call
         else:
             await call
+
+
+@pytest.fixture
+def account_http():
+    """Supply real API methods with queued JSON replies and no network traffic."""
+    response = AsyncMock()
+    response.status = 200
+    session = MagicMock()
+    session.post = AsyncMock(return_value=response)
+    with patch(
+        "custom_components.panasonic_smart_china.api.async_get_clientsession",
+        return_value=session,
+    ):
+        yield response, session
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("family_id", ["family", 123])
+async def test_authenticate_valid_account_chain(
+    device_context, account_http, family_id
+):
+    """A valid token/login/list chain must retain native IDs and use the session."""
+    hass, _, _, _, _ = device_context
+    response, session = account_http
+    response.json.side_effect = [
+        {"results": {"token": "challenge"}},
+        {
+            "results": {
+                "usrId": "usr",
+                "ssId": "session",
+                "familyId": family_id,
+                "realFamilyId": family_id,
+            }
+        },
+        {
+            "results": {
+                "devList": [{"deviceId": "device", "params": {"deviceName": "bath"}}]
+            }
+        },
+    ]
+    client = PanasonicApiClient(hass)
+    result = await client.authenticate("user", "password")
+    assert result.usr_id == "usr"
+    assert result.ssid == client.ssid == "session"
+    assert result.family_id == result.real_family_id == family_id
+    assert result.devices == {"device": {"deviceName": "bath"}}
+    requests = session.post.call_args_list
+    assert [call.args[0].rsplit("/", 1)[-1] for call in requests] == [
+        "UsrGetToken",
+        "UsrLogin",
+        "UsrGetBindDevInfo",
+    ]
+    assert requests[-1].kwargs["headers"]["Cookie"] == "SSID=session"
+    assert requests[-1].kwargs["json"]["params"]["familyId"] == family_id
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "results", [None, [], "bad", {}, {"token": []}, {"token": 123}, {"token": ""}]
+)
+async def test_malformed_token_response(device_context, account_http, results):
+    """Invalid challenges must raise API response errors before login is sent."""
+    hass, _, _, _, _ = device_context
+    response, session = account_http
+    response.json.return_value = {"results": results}
+    with pytest.raises(PanasonicApiResponseError):
+        await PanasonicApiClient(hass).authenticate("user", "password")
+    assert session.post.await_count == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("field", ["usrId", "ssId", "familyId", "realFamilyId"])
+@pytest.mark.parametrize("invalid", [None, [], True, ""])
+async def test_malformed_login_fields(device_context, account_http, field, invalid):
+    """Missing/invalid credentials must fail within the API before listing devices."""
+    hass, _, _, _, _ = device_context
+    response, session = account_http
+    fields = {"usrId": "usr", "ssId": "session", "familyId": 1, "realFamilyId": 2}
+    if invalid is None:
+        fields.pop(field)
+    else:
+        fields[field] = invalid
+    response.json.side_effect = [
+        {"results": {"token": "challenge"}},
+        {"results": fields},
+    ]
+    client = PanasonicApiClient(hass)
+    with pytest.raises(PanasonicApiResponseError, match=field):
+        await client.authenticate("user", "password")
+    assert client.ssid is None
+    assert session.post.await_count == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("results", [None, [], "bad"])
+async def test_malformed_login_results(device_context, account_http, results):
+    """Non-object login results must produce response errors instead of KeyError."""
+    hass, _, _, _, _ = device_context
+    response, _ = account_http
+    response.json.side_effect = [
+        {"results": {"token": "challenge"}},
+        {"results": results},
+    ]
+    with pytest.raises(PanasonicApiResponseError):
+        await PanasonicApiClient(hass).authenticate("user", "password")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "results",
+    [
+        None,
+        [],
+        "bad",
+        {"devList": None},
+        {"devList": {}},
+        {"devList": [None]},
+        {"devList": [{"deviceId": [], "params": {}}]},
+        {"devList": [{"deviceId": "device", "params": []}]},
+        {"devList": [{"deviceId": "device"}]},
+        {"devList": [{"params": {}}]},
+    ],
+)
+async def test_malformed_device_list(device_context, account_http, results):
+    """Malformed lists/records must produce API errors, never partial inventories."""
+    hass, _, _, _, _ = device_context
+    response, _ = account_http
+    response.json.return_value = {"results": results}
+    with pytest.raises(PanasonicApiResponseError):
+        await PanasonicApiClient(hass).get_devices("usr", 1, 2)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("results", [{}, {"devList": []}])
+async def test_empty_device_list_is_valid(device_context, account_http, results):
+    """Absent or empty devList must remain a valid account with no bound devices."""
+    hass, _, _, _, _ = device_context
+    response, _ = account_http
+    response.json.return_value = {"results": results}
+    assert await PanasonicApiClient(hass).get_devices("usr", 1, 2) == {}

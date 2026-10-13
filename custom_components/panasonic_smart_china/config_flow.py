@@ -65,8 +65,8 @@ class PanasonicConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._username: str | None = None
         self._usr_id: str | None = None
         self._ssid: str | None = None
-        self._family_id: str | None = None
-        self._real_family_id: str | None = None
+        self._family_id: str | int | None = None
+        self._real_family_id: str | int | None = None
         self._devices: dict[str, dict[str, Any]] = {}
         self._device_support_map: dict[str, dict[str, Any]] = {}
 

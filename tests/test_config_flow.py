@@ -67,3 +67,25 @@ async def test_existing_only_rescan_preserves_old_data_until_update():
     for key in ("token", "enabled", "sensor_id"):
         assert saved[key] == original[key]
     reload.assert_awaited_once_with("test")
+
+
+@pytest.mark.asyncio
+async def test_malformed_account_response_shows_cannot_connect(device_context):
+    """Invalid cloud results must render a retryable login error in the HA flow."""
+    from custom_components.panasonic_smart_china.api import PanasonicApiClient
+    from custom_components.panasonic_smart_china.config_flow import PanasonicConfigFlow
+
+    hass, _, _, _, _ = device_context
+    client = PanasonicApiClient(hass)
+    client._post = AsyncMock(return_value={"results": []})
+    flow = PanasonicConfigFlow()
+    flow.hass = hass
+    with patch(
+        "custom_components.panasonic_smart_china.config_flow.PanasonicApiClient",
+        return_value=client,
+    ):
+        result = await flow.async_step_user(
+            {"username": "user", "password": "password"}
+        )
+    assert result["type"] == "form"
+    assert result["errors"] == {"base": "cannot_connect"}
