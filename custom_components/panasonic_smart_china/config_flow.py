@@ -351,7 +351,12 @@ class PanasonicOptionsFlow(config_entries.OptionsFlow):
     async def async_step_rescan(self, user_input=None):
         """Refresh account devices using the current account session."""
         data = self._config_entry.data
-        devices = dict(data.get(CONF_DEVICES, {}))
+        # HA saves only when new data differs from entry.data. Copy device records
+        # before refreshing metadata so this comparison still sees the changes.
+        devices = {
+            device_id: dict(info)
+            for device_id, info in data.get(CONF_DEVICES, {}).items()
+        }
         errors = {}
 
         try:
