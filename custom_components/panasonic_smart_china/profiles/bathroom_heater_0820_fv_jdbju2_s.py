@@ -28,6 +28,19 @@ CONTINUOUS_DURATION_CODE = 35
 
 ACTIVE_MODES = frozenset({MODE_VENTILATION, MODE_COOL_DRY, MODE_HOT_DRY, MODE_HEAT})
 DIRECTION_SUPPORTED_MODES = frozenset({MODE_COOL_DRY, MODE_HOT_DRY, MODE_HEAT})
+OPERATING_MODE_CAPABILITY = PanasonicSelectCapability(
+    key="operating_mode",
+    field="runningMode",
+    # HA's fixed HVAC labels describe air conditioners. Provide the appliance's
+    # actual modes without changing existing climate service identifiers.
+    options={
+        "off": MODE_OFF,
+        "heat": MODE_HEAT,
+        "ventilation": MODE_VENTILATION,
+        "cool_dry": MODE_COOL_DRY,
+        "hot_dry": MODE_HOT_DRY,
+    },
+)
 WIND_DIRECTION_CAPABILITY = PanasonicSelectCapability(
     key="wind_direction",
     field="windDirectionSet",
@@ -237,7 +250,9 @@ BATHROOM_HEATER_0820_FV_JDBJU2_S_PROFILE = PanasonicProfile(
         "User-Agent": "SmartApp",
         "Referer": "https://app.psmartcloud.com/",
     },
+    control_skip_value=CONTROL_SKIP_VALUE,
     select_capabilities=(
+        OPERATING_MODE_CAPABILITY,
         AIR_DISTRIBUTION_CAPABILITY,
         RUN_DURATION_CAPABILITY,
         VENTILATION_FAN_STRENGTH_CAPABILITY,

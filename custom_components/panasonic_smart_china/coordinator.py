@@ -119,8 +119,8 @@ class PanasonicDeviceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if isinstance(err, ConfigEntryAuthFailed):
             self.entry.async_start_reauth(self.hass)
 
-    async def _async_read_for_control(self, failure_message: str) -> dict[str, Any]:
-        """Caller holds the lock so a read cannot interleave with another command."""
+    async def _async_prepare_control(self) -> dict[str, Any]:
+        """Read fresh parameters without publishing old cloud state before a write."""
         self._ensure_control_active()
         try:
             status = await self._read_status()
@@ -128,20 +128,17 @@ class PanasonicDeviceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self._mark_control_error(err)
             if isinstance(err, ConfigEntryAuthFailed):
                 raise
-            raise HomeAssistantError(f"{failure_message}: {err}") from err
+            raise HomeAssistantError(f"Cannot read device status: {err}") from err
         self._ensure_control_active()
-        self.async_set_updated_data(status)
-        return status
-
-    async def _async_prepare_control(self) -> dict[str, Any]:
-        """Recheck current status because App actions can invalidate HA's last poll."""
-        status = await self._async_read_for_control("Cannot read device status")
-        if not self.online:
+        offline_field = self.profile.offline_field
+        if offline_field and status_int(status.get(offline_field)) == 1:
+            self.async_set_updated_data(status)
             raise HomeAssistantError("The Panasonic device is offline")
         if any(
             status_int(status.get(key)) in values
             for key, values in self.profile.control_blockers.items()
         ):
+            self.async_set_updated_data(status)
             raise HomeAssistantError("The device is temporarily blocking control")
         return status
 
@@ -150,7 +147,7 @@ class PanasonicDeviceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         changes: dict[str, Any],
         status: dict[str, Any],
     ) -> None:
-        """Keep the caller's lock through readback to prevent lost concurrent edits."""
+        """Publish accepted controls under the caller's lock, as legacy entities do."""
         try:
             control_payload = self.profile.build_control_payload(changes, status)
         except ValueError as err:
@@ -169,12 +166,25 @@ class PanasonicDeviceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             raise auth_error from err
         except PanasonicApiError as err:
             raise HomeAssistantError(f"Panasonic control failed: {err}") from err
-        await self._async_read_for_control(
-            "Command sent, but reading the resulting state failed",
-        )
+        self._ensure_control_active()
+        # Match the existing heater: acceptance updates controls immediately;
+        # normal polling later reconciles device execution. Skip values mean
+        # "leave unchanged", so they must never replace real status fields.
+        updated_status = {
+            **status,
+            **{
+                key: value
+                for key, value in control_payload.items()
+                if value != self.profile.control_skip_value
+            },
+        }
+        mode = status_int(updated_status.get(self.profile.mode_field))
+        if mode in self.profile.active_modes:
+            self.last_active_mode = mode
+        self.async_set_updated_data(updated_status)
 
     async def async_control(self, changes: dict[str, Any]) -> None:
-        """Serialize the entire read/validate/write/readback transaction."""
+        """Serialize reading, validation, writing and the accepted-state update."""
         async with self._command_lock:
             status = await self._async_prepare_control()
             await self._async_send_control(changes, status)
@@ -188,6 +198,7 @@ class PanasonicDeviceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             # Compare fresh state under the lock: App actions and queued HA
             # controls can both change the mode since the last periodic poll.
             if status_int(status.get(self.profile.mode_field)) == mode:
+                self.async_set_updated_data(status)
                 return
             await self._async_send_control({self.profile.mode_field: mode}, status)
 
@@ -195,7 +206,11 @@ class PanasonicDeviceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Restore the latest active mode without restarting a running device."""
         async with self._command_lock:
             status = await self._async_prepare_control()
-            if self.mode in self.profile.active_modes:
+            if (
+                status_int(status.get(self.profile.mode_field))
+                in self.profile.active_modes
+            ):
+                self.async_set_updated_data(status)
                 return
             await self._async_send_control(
                 {self.profile.mode_field: self.last_active_mode},
@@ -207,5 +222,8 @@ class PanasonicDeviceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     ) -> None:
         if option not in capability.options:
             raise HomeAssistantError(f"Unsupported option: {option}")
+        if capability.field == self.profile.mode_field:
+            await self.async_set_mode(capability.options[option])
+            return
         # The profile validates modes/options again using fresh state inside the lock.
         await self.async_control({capability.field: capability.options[option]})

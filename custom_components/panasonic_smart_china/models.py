@@ -127,6 +127,7 @@ class PanasonicProfile:
         Callable[[dict[str, Any], dict[str, Any]], dict[str, Any]] | None
     ) = None
     mode_field: str = "runningMode"
+    control_skip_value: int | None = None
 
     @property
     def active_modes(self) -> frozenset[int]:

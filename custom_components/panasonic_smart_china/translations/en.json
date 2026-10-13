@@ -7,6 +7,16 @@
       }
     },
     "select": {
+      "operating_mode": {
+        "name": "Operating mode",
+        "state": {
+          "off": "Standby",
+          "heat": "Heating",
+          "ventilation": "Ventilation",
+          "cool_dry": "Cool drying",
+          "hot_dry": "Hot drying"
+        }
+      },
       "wind_kind": {"name": "Air distribution", "state": {"concentrated": "Concentrated", "diffused": "Diffused"}},
       "duration": {
         "name": "Run duration",

@@ -50,10 +50,10 @@ POLLING_INTERVAL = timedelta(seconds=15)
 
 def _as_int(value, default=None):
     """Best-effort int conversion for Panasonic status fields."""
-    # Preserve conversion behavior for existing model entities. New profiles use
-    # strict status_int parsing so malformed codes cannot enable capabilities.
+    if value is None:
+        return default
     try:
-        return int(value) if value is not None else default
+        return int(value)
     except (TypeError, ValueError):
         return default
 

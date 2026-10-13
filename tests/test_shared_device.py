@@ -41,28 +41,28 @@ from custom_components.panasonic_smart_china.switch import (
 
 
 @pytest.mark.asyncio
-async def test_mode_controls_and_readback(device_context):
-    """Prevent control skip codes entering HA state; expect OFF only from the cloud
-    readback and no synthetic payload fields.
-    """
+async def test_accepted_mode_updates_without_readback(device_context):
+    """Accepted OFF must publish immediately, preserve status and exclude skips."""
     _, _, client, coordinator, _ = device_context
     entity = PanasonicProfileClimateEntity(coordinator)
-    client.get_device_status.side_effect = [{"runningMode": 7}, {"runningMode": 0}]
+    client.get_device_status.reset_mock()
+    original_status = client.get_device_status.return_value.copy()
     await entity.async_turn_off()
+    client.get_device_status.assert_awaited_once()
     assert client.set_device_status.call_args.args[-1]["runningMode"] == 0
     assert entity.hvac_mode == HVACMode.OFF
-    assert coordinator.data == {"runningMode": 0}  # No 255 skip fields in state.
+    assert coordinator.data == {**original_status, "runningMode": 0}
 
 
 @pytest.mark.asyncio
-async def test_readback_can_lag_without_optimistic_success(device_context):
-    """Handle delayed device execution honestly; expect the requested command to be
-    sent while HA retains the actual readback mode.
-    """
+async def test_periodic_poll_reconciles_accepted_mode(device_context):
+    """Successful control updates locally; normal polling later uses actual status."""
     _, _, client, coordinator, _ = device_context
     await coordinator.async_control({"runningMode": 3})
-    assert coordinator.mode == 7
+    assert coordinator.mode == 3
     assert client.set_device_status.call_args.args[-1]["runningMode"] == 3
+    await coordinator.async_refresh()
+    assert coordinator.mode == 7
 
 
 @pytest.mark.asyncio
@@ -92,7 +92,7 @@ async def test_queued_turn_on_uses_latest_remembered_mode(device_context):
     """
     _, _, client, coordinator, _ = device_context
     entity = PanasonicProfileClimateEntity(coordinator)
-    client.get_device_status.side_effect = [{"runningMode": 0}, {"runningMode": 5}]
+    client.get_device_status.return_value = {"runningMode": 0}
     async with coordinator._command_lock:
         task = asyncio.create_task(entity.async_turn_on())
         await asyncio.sleep(0)
@@ -142,11 +142,11 @@ async def test_shared_controls_use_profile_mode_field(device_context):
         build_control_payload=build_payload,
     )
     entity = PanasonicProfileClimateEntity(coordinator)
-    client.get_device_status.side_effect = [{"operation": 0}, {"operation": 5}]
+    client.get_device_status.return_value = {"operation": 0}
     await entity.async_set_hvac_mode(HVACMode.DRY)
     assert client.set_device_status.call_args.args[-1] == {"operation": 5}
     assert entity.hvac_mode == HVACMode.DRY
-    client.get_device_status.side_effect = [{"operation": 0}, {"operation": 5}]
+    client.get_device_status.return_value = {"operation": 0}
     await entity.async_turn_on()
     assert client.set_device_status.call_args.args[-1] == {"operation": 5}
 
@@ -214,7 +214,7 @@ async def test_failed_write_does_not_change_mode(device_context):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("stage", ["read", "write", "readback"])
+@pytest.mark.parametrize("stage", ["read", "write"])
 async def test_auth_failure_triggers_reauth(device_context, stage):
     """Protect authentication handling at all transaction stages; expect
     unavailable state, an auth error and one reauth request.
@@ -223,10 +223,8 @@ async def test_auth_failure_triggers_reauth(device_context, stage):
     err = PanasonicApiAuthError("expired")
     if stage == "write":
         client.set_device_status.side_effect = err
-    elif stage == "read":
-        client.get_device_status.side_effect = err
     else:
-        client.get_device_status.side_effect = [{"runningMode": 7}, err]
+        client.get_device_status.side_effect = err
     with pytest.raises(ConfigEntryAuthFailed):
         await coordinator.async_control({"runningMode": 0})
     assert not coordinator.online
@@ -234,19 +232,19 @@ async def test_auth_failure_triggers_reauth(device_context, stage):
 
 
 @pytest.mark.asyncio
-async def test_failed_readback_marks_unavailable(device_context):
-    """Avoid reporting a sent command as confirmed when readback fails; expect
-    unavailable state and retention of the last known mode.
-    """
+async def test_poll_failure_after_accepted_control_marks_unavailable(device_context):
+    """A later poll failure must not turn accepted control into a service failure."""
     _, _, client, coordinator, _ = device_context
     client.get_device_status.side_effect = [
         {"runningMode": 7},
         PanasonicApiResponseError("timeout"),
     ]
-    with pytest.raises(HomeAssistantError, match="Command sent"):
-        await coordinator.async_control({"runningMode": 0})
+    await coordinator.async_control({"runningMode": 0})
+    assert coordinator.mode == 0
+    assert coordinator.online
+    await coordinator.async_refresh()
     assert not coordinator.online
-    assert coordinator.mode == 7
+    assert coordinator.mode == 0
 
 
 @pytest.mark.asyncio
@@ -341,6 +339,7 @@ async def test_profile_driven_creation_and_shared_updates(device_context):
     entities = []
     await setup_select(hass, entry, entities.extend)
     assert {entity.capability.key for entity in entities} == {
+        "operating_mode",
         "wind_kind",
         "duration",
         "fan_strength",
@@ -560,3 +559,82 @@ async def test_same_mode_combined_control_is_sent(device_context):
     _, _, client, coordinator, _ = device_context
     await coordinator.async_control({"runningMode": 7, "timeSet": 6})
     assert client.set_device_status.call_args.args[-1]["timeSet"] == 6
+
+
+@pytest.mark.asyncio
+async def test_operating_mode_select_preserves_running_countdown(device_context):
+    """Selecting current appliance mode must not restore memory or resend a write."""
+    from custom_components.panasonic_smart_china.profiles.bathroom_heater_0820_fv_jdbju2_s import (
+        OPERATING_MODE_CAPABILITY,
+    )
+
+    _, _, client, coordinator, _ = device_context
+    entity = PanasonicSelectEntity(coordinator, OPERATING_MODE_CAPABILITY)
+    assert entity.options == ["off", "heat", "ventilation", "cool_dry", "hot_dry"]
+    assert entity.current_option == "heat"
+    await entity.async_select_option("heat")
+    client.set_device_status.assert_not_called()
+    assert coordinator.data["timeMinuteLeft"] == 40
+
+
+@pytest.mark.asyncio
+async def test_state_changes_only_after_control_is_accepted(device_context):
+    """Do not publish pre-write cloud state or the target until the API succeeds."""
+    _, _, client, coordinator, _ = device_context
+    client.get_device_status.reset_mock()
+    client.get_device_status.return_value = {"runningMode": 0}
+    write_started, accept_write = asyncio.Event(), asyncio.Event()
+
+    async def write(*_args):
+        write_started.set()
+        await accept_write.wait()
+        return {}
+
+    client.set_device_status.side_effect = write
+    task = asyncio.create_task(coordinator.async_set_mode(5))
+    await write_started.wait()
+    try:
+        assert coordinator.mode == 7
+    finally:
+        accept_write.set()
+        await task
+    assert coordinator.mode == 5
+    assert coordinator.last_active_mode == 5
+    client.get_device_status.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_shutdown_during_write_prevents_local_publication(device_context):
+    """A successful obsolete write must not publish state after device unload."""
+    _, _, client, coordinator, _ = device_context
+    original_status = coordinator.data.copy()
+    write_started, complete_write = asyncio.Event(), asyncio.Event()
+
+    async def write(*_args):
+        write_started.set()
+        await complete_write.wait()
+        return {}
+
+    client.set_device_status.side_effect = write
+    task = asyncio.create_task(coordinator.async_set_mode(3))
+    await write_started.wait()
+    await coordinator.async_shutdown()
+    complete_write.set()
+    with pytest.raises(HomeAssistantError, match="unloaded"):
+        await task
+    assert coordinator.data == original_status
+
+
+@pytest.mark.asyncio
+async def test_accepted_select_updates_control_but_preserves_other_fields(
+    device_context,
+):
+    """An accepted choice must immediately update its entity without merging skips."""
+    _, _, client, coordinator, _ = device_context
+    client.get_device_status.reset_mock()
+    original = client.get_device_status.return_value.copy()
+    entity = PanasonicSelectEntity(coordinator, AIR_DISTRIBUTION_CAPABILITY)
+    await entity.async_select_option("concentrated")
+    assert entity.current_option == "concentrated"
+    assert coordinator.data == {**original, "windKindSet": 2}
+    client.get_device_status.assert_awaited_once()

@@ -107,17 +107,20 @@ async def test_real_platforms_and_services(device_context, initial_failure):
         registry = er.async_get(hass)
         entries = er.async_entries_for_config_entry(registry, entry.entry_id)
         assert (
-            len(entries) == 9
-        )  # 8 new-profile entities plus the existing bath climate.
+            len(entries) == 10
+        )  # 9 new-profile entities plus the existing bath climate.
         new_entries = [
             item for item in entries if coordinator.device_id in item.unique_id
         ]
-        assert len(new_entries) == 8
+        assert len(new_entries) == 9
         assert len({item.device_id for item in new_entries}) == 1
         old_climate = next(item for item in entries if "Aircle-05-02" in item.unique_id)
         assert hass.states.get(old_climate.entity_id).state == "heat"
         climate = next(item for item in new_entries if item.domain == "climate")
         duration = next(item for item in entries if item.translation_key == "duration")
+        operating_mode = next(
+            item for item in entries if item.translation_key == "operating_mode"
+        )
         if initial_failure:
             assert hass.states.get(climate.entity_id).state == "unavailable"
             # Recover on the same coordinator without rebuilding account entities.
@@ -161,7 +164,19 @@ async def test_real_platforms_and_services(device_context, initial_failure):
             )
             == 1
         )
-        client.get_device_status.side_effect = [{"runningMode": 7}, {"runningMode": 0}]
+        # The appliance mode select must work through native HA services and
+        # share accepted state with the climate compatibility entity.
+        assert hass.states.get(operating_mode.entity_id).state == "heat"
+        client.get_device_status.side_effect = [{"runningMode": 7}]
+        await hass.services.async_call(
+            "select",
+            "select_option",
+            {"entity_id": operating_mode.entity_id, "option": "cool_dry"},
+            blocking=True,
+        )
+        assert hass.states.get(operating_mode.entity_id).state == "cool_dry"
+        assert hass.states.get(climate.entity_id).state == "cool"
+        client.get_device_status.side_effect = [{"runningMode": 4}]
         await hass.services.async_call(
             "climate",
             "set_hvac_mode",
@@ -170,6 +185,7 @@ async def test_real_platforms_and_services(device_context, initial_failure):
         )
         assert hass.states.get(climate.entity_id).state == "off"
         assert hass.states.get(duration.entity_id).state == "unavailable"
+        assert hass.states.get(operating_mode.entity_id).state == "off"
         assert await hass.config_entries.async_unload(entry.entry_id)
         await hass.async_block_till_done()
         assert entry.entry_id not in hass.data[DOMAIN]

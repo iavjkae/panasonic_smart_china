@@ -82,6 +82,16 @@
       }
     },
     "select": {
+      "operating_mode": {
+        "name": "运行模式",
+        "state": {
+          "off": "待机",
+          "heat": "暖风",
+          "ventilation": "换气",
+          "cool_dry": "凉干燥",
+          "hot_dry": "热干燥"
+        }
+      },
       "wind_kind": {
         "name": "送风方式",
         "state": {"concentrated": "集中", "diffused": "扩散"}
