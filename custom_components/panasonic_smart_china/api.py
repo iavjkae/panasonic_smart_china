@@ -260,25 +260,29 @@ class PanasonicApiClient:
     def _raise_for_business_error(self, data: dict[str, Any]) -> None:
         nested_error = data.get("error")
         nested_error = nested_error if isinstance(nested_error, dict) else {}
-        error_code = data.get("errorCode", nested_error.get("code"))
-        # JSON arrays/objects cannot be tested against the success-code set.
-        # Keep malformed replies inside the API error contract, so callers can
-        # mark updates unavailable or report a service error consistently.
-        if isinstance(error_code, (dict, list)):
-            raise PanasonicApiResponseError("Invalid business error code in response")
-        if error_code in SUCCESS_ERROR_CODES:
-            return
-
-        error_code_text = str(error_code)
+        error_codes = (data.get("errorCode"), nested_error.get("code"))
+        # Either representation can carry the actual failure. Give auth errors
+        # priority so a generic wrapper error cannot prevent session recovery.
+        failures = []
+        malformed = False
+        for code in error_codes:
+            if isinstance(code, (dict, list)):
+                malformed = True
+            elif code not in SUCCESS_ERROR_CODES:
+                failures.append(str(code))
         message = (
             data.get("errorMessage")
             or data.get("msg")
             or nested_error.get("message")
             or "Panasonic API error"
         )
-        if error_code_text in AUTH_ERROR_CODES:
-            raise PanasonicApiAuthError(f"{message} (errorCode: {error_code_text})")
-        raise PanasonicApiResponseError(f"{message} (errorCode: {error_code_text})")
+        for code in failures:
+            if code in AUTH_ERROR_CODES:
+                raise PanasonicApiAuthError(f"{message} (errorCode: {code})")
+        if malformed:
+            raise PanasonicApiResponseError("Invalid business error code in response")
+        if failures:
+            raise PanasonicApiResponseError(f"{message} (errorCode: {failures[0]})")
 
     def _app_headers(self, include_cookie: bool = False) -> dict[str, str]:
         headers = {

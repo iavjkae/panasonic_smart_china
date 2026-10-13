@@ -245,3 +245,57 @@ async def test_existing_profiles_keep_accepting_responses_without_id(
         assert await client.set_device_status(
             profile, "usr", "device", "token", {}
         ) == {"results": {}}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("operation", ["status", "control"])
+@pytest.mark.parametrize(
+    "top,nested,error",
+    [
+        (None, 4102, PanasonicApiAuthError),
+        (0, 4102, PanasonicApiAuthError),
+        ("0000", 400, PanasonicApiResponseError),
+        (400, 4102, PanasonicApiAuthError),
+        (4102, 400, PanasonicApiAuthError),
+        (0, [], PanasonicApiResponseError),
+        (0, 0, None),
+        (None, "0000", None),
+    ],
+)
+async def test_both_business_error_representations(
+    device_context, operation, top, nested, error
+):
+    """Both error fields must be honored; auth takes priority and success passes."""
+    hass, _, _, _, _ = device_context
+    client = PanasonicApiClient(hass, "session")
+    response = AsyncMock()
+    response.status = 200
+    response.json.return_value = {
+        "id": 100 if operation == "status" else 52,
+        "results": {"runningMode": 7},
+        "errorCode": top,
+        "error": {"code": nested},
+    }
+    session = MagicMock()
+    session.post = AsyncMock(return_value=response)
+    with patch(
+        "custom_components.panasonic_smart_china.api.async_get_clientsession",
+        return_value=session,
+    ):
+        if operation == "status":
+            call = client.get_device_status(
+                BATHROOM_HEATER_0820_FV_JDBJU2_S_PROFILE, "usr", "device", "token"
+            )
+        else:
+            call = client.set_device_status(
+                BATHROOM_HEATER_0820_FV_JDBJU2_S_PROFILE,
+                "usr",
+                "device",
+                "token",
+                {"runningMode": 0},
+            )
+        if error:
+            with pytest.raises(error):
+                await call
+        else:
+            await call
