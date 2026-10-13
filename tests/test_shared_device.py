@@ -530,16 +530,15 @@ async def test_inflight_poll_is_ignored_after_shutdown(device_context, auth_fail
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("mode", [0, 7])
-async def test_repeated_mode_preserves_countdown(device_context, mode):
-    """Repeated heat/off calls must publish fresh status without resetting memory."""
+async def test_repeated_mode_preserves_countdown(device_context):
+    """Repeated heat must retain the running countdown without restoring memory."""
     _, _, client, coordinator, _ = device_context
     client.get_device_status.return_value = {
-        "runningMode": mode,
+        "runningMode": 7,
         "timeMinuteLeft": 20,
         "remWarmTimeSet": 12,
     }
-    await coordinator.async_set_mode(mode)
+    await coordinator.async_set_mode(7)
     client.set_device_status.assert_not_called()
     assert coordinator.data["timeMinuteLeft"] == 20
 

@@ -18,7 +18,7 @@ async def test_existing_only_rescan_preserves_old_data_until_update():
         "category": "0820",
         "token": "custom-token",
         "enabled": False,
-        "sensor_id": "sensor.bathroom",
+        "sensor_entity_id": "sensor.bathroom",
     }
     entry = SimpleNamespace(
         entry_id="test",
@@ -64,7 +64,7 @@ async def test_existing_only_rescan_preserves_old_data_until_update():
     saved = updates[0]["devices"][device_id]
     assert saved["deviceName"] == "new"
     assert saved["profile_id"] == "bathroom_heater_0820_fv_jdbju2_s"
-    for key in ("token", "enabled", "sensor_id"):
+    for key in ("token", "enabled", "sensor_entity_id"):
         assert saved[key] == original[key]
     reload.assert_awaited_once_with("test")
 

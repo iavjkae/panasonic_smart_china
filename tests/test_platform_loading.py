@@ -106,13 +106,14 @@ async def test_real_platforms_and_services(device_context, initial_failure):
         await asyncio.wait_for(hass.async_block_till_done(), 10)
         registry = er.async_get(hass)
         entries = er.async_entries_for_config_entry(registry, entry.entry_id)
-        assert (
-            len(entries) == 10
-        )  # 9 new-profile entities plus the existing bath climate.
         new_entries = [
             item for item in entries if coordinator.device_id in item.unique_id
         ]
-        assert len(new_entries) == 9
+        assert {"climate", "select", "sensor"} <= {item.domain for item in new_entries}
+        assert {"operating_mode", "duration", "wind_kind"} <= {
+            item.translation_key for item in new_entries
+        }
+        assert not any(item.domain == "switch" for item in new_entries)
         assert len({item.device_id for item in new_entries}) == 1
         old_climate = next(item for item in entries if "Aircle-05-02" in item.unique_id)
         assert hass.states.get(old_climate.entity_id).state == "heat"

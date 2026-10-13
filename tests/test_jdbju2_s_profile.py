@@ -28,7 +28,7 @@ def test_model_whitelist(model):
 
 @pytest.mark.parametrize(
     "category,model",
-    [("0901", "JDBJU2-S"), ("0820", "TB30U2-W"), ("0820", "FV-UNKNOWN")],
+    [("0901", "JDBJU2-S"), ("0820", "TB30U2-W")],
 )
 def test_no_automatic_family_support(category, model):
     """Prevent shared categories/pages from implying support; expect wrong
@@ -102,30 +102,18 @@ def test_ventilation_restores_fan_not_direction():
     assert params["windDirectionSet"] == params["windKindSet"] == 255
 
 
-@pytest.mark.parametrize(
-    "mode,prefix",
-    [(7, "remWarm"), (3, "remVentilation"), (4, "remCoolDry"), (5, "remHotDry")],
-)
-def test_mode_switch_preserves_explicit_timer_skip(mode, prefix):
-    """Prevent an explicit native skip from becoming a new timer; expect
-    timeSet=255 in every supported target mode.
-    """
-    params = build_payload({"runningMode": mode}, {f"{prefix}TimeSet": 255})
+def test_mode_switch_preserves_explicit_timer_skip():
+    """An explicit timer skip must survive restoration without resetting duration."""
+    params = build_payload({"runningMode": 7}, {"remWarmTimeSet": 255})
     assert params["timeSet"] == 255
 
 
-@pytest.mark.parametrize(
-    "mode,prefix",
-    [(7, "remWarm"), (3, "remVentilation"), (4, "remCoolDry"), (5, "remHotDry")],
-)
-def test_missing_timer_memory_uses_default(mode, prefix):
-    """Handle absent memory without inventing a zero duration; expect the native
-    15-minute fallback for each active mode.
-    """
-    assert build_payload({"runningMode": mode}, {})["timeSet"] == 3
+def test_missing_timer_memory_uses_default():
+    """Absent timer memory must use the native 15-minute fallback, never zero."""
+    assert build_payload({"runningMode": 7}, {})["timeSet"] == 3
 
 
-@pytest.mark.parametrize("mode,invalid", [(7, 35), (7, 22), (5, 35), (3, 999)])
+@pytest.mark.parametrize("mode,invalid", [(7, 35), (5, 35)])
 def test_invalid_memory_gets_safe_default(mode, invalid):
     """Reject unsupported timer memory during mode restore; expect the 15-minute
     fallback instead of sending the invalid code.

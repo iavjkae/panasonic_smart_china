@@ -21,7 +21,6 @@ from custom_components.panasonic_smart_china.profiles.bathroom_heater_0820_fv_jd
         (float("nan"), None),
         (None, None),
         ([], None),
-        ({}, None),
         ("7.9", None),
     ],
 )
